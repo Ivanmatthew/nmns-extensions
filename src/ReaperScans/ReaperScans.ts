@@ -25,7 +25,7 @@ export const ReaperScansInfo: SourceInfo = {
     name: 'ReaperScans',
     description: 'New Reaperscans source.',
     author: 'NmN',
-    authorWebsite: 'http://github.com/pandeynmm',
+    authorWebsite: 'http://github.com/pandeynmn',
     icon: 'icon.png',
     contentRating: ContentRating.EVERYONE,
     websiteBaseURL: REAPERSCANS_DOMAIN,
