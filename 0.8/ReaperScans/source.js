@@ -463,20 +463,24 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ReaperScans = exports.ReaperScansInfo = void 0;
 const types_1 = require("@paperback/types");
 const parser_1 = require("./parser");
-const helper_1 = require("./helper");
-const REAPERSCANS_DOMAIN = 'https://reaperscans.com';
+const REAPERSCANS_DOMAIN = "https://reaperscans.com";
+const REAPERSCANS_DOMAIN_API = "https://api.reaperscans.com";
+const REAPERSCANS_CDN = "https://media.reaperscans.com/file/4SRBHm"; // https://domain.tld/file/<bucket>/<file>
+const ID_SEP = "|#|";
+// https://media.reaperscans.com/file/4SRBHm//comics/c22c1254-ce3c-4628-b3ad-34df82e40cd8/tdDPcgIEfalT3qvWpQQgVZECpadGpI9azYAxFcOo.jpg
+//SECTION - SourceInfo
 exports.ReaperScansInfo = {
-    version: '4.0.3',
-    name: 'ReaperScans',
-    description: 'Reaperscans source for 0.8',
-    author: 'NmN',
-    authorWebsite: 'http://github.com/pandeynmm',
-    icon: 'icon.png',
+    version: "5.0",
+    name: "ReaperScans",
+    description: "Reaperscans source for 0.8",
+    author: "NmN",
+    authorWebsite: "http://github.com/pandeynmm",
+    icon: "icon.png",
     contentRating: types_1.ContentRating.EVERYONE,
     websiteBaseURL: REAPERSCANS_DOMAIN,
     sourceTags: [
         {
-            text: 'English',
+            text: "English",
             type: types_1.BadgeColor.GREY,
         },
     ],
@@ -484,14 +488,16 @@ exports.ReaperScansInfo = {
         types_1.SourceIntents.HOMEPAGE_SECTIONS |
         types_1.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,
 };
+//SECTION - ReaperScans
 class ReaperScans {
-    constructor(cheerio) {
-        this.cheerio = cheerio;
+    constructor() {
+        //LINK - Class variables
         this.baseUrl = REAPERSCANS_DOMAIN;
+        this.apiUrl = REAPERSCANS_DOMAIN_API;
         this.stateManager = App.createSourceStateManager();
         this.RETRY = 5;
         this.parser = new parser_1.Parser();
-        this.helper = new helper_1.Helper();
+        //LINK - Manager
         this.requestManager = App.createRequestManager({
             requestsPerSecond: 6,
             requestTimeout: 8000,
@@ -500,7 +506,7 @@ class ReaperScans {
                     request.headers = {
                         ...(request.headers ?? {}),
                         ...{
-                            'user-agent': await this.requestManager.getDefaultUserAgent(),
+                            "user-agent": await this.requestManager.getDefaultUserAgent(),
                             referer: `${this.baseUrl}`,
                         },
                     };
@@ -512,48 +518,81 @@ class ReaperScans {
             },
         });
     }
+    //LINK - URL
     getMangaShareUrl(mangaId) {
         return `${this.baseUrl}/comics/${mangaId}`;
     }
+    //LINK - M-Details
     async getMangaDetails(mangaId) {
         const request = App.createRequest({
-            url: `${this.baseUrl}/comics/${mangaId}`,
-            method: 'GET',
+            url: `${this.apiUrl}/series/${mangaId.split("|#|")[1]}`,
+            method: "GET",
         });
-        const response = await this.requestManager.schedule(request, this.RETRY);
+        const response = await this.requestManager.schedule(request, 1);
         this.checkResponseError(response);
-        const $ = this.cheerio.load(response.data);
-        return this.parser.parseMangaDetails($, mangaId);
+        const mangaDetails = JSON.parse(response.data ?? "[]");
+        return this.parser.parseMangaDetails(mangaDetails, mangaId);
     }
+    //LINK - Chapters
     async getChapters(mangaId) {
         const chapters = [];
+        const params = {
+            perPage: 10000,
+            series_id: mangaId.split(ID_SEP)[0],
+            page: 1,
+        };
+        const queryString = this.parser.joinParams(params);
+        const constructedURL = `${this.apiUrl}/chapter/query?adult=true${queryString}`;
         const request = App.createRequest({
-            url: `${this.baseUrl}/comics/${mangaId}`,
-            method: 'GET',
+            url: constructedURL,
+            method: "GET",
+            headers: {
+                "user-agent": await this.requestManager.getDefaultUserAgent(),
+                referer: `${this.baseUrl}/`,
+            },
         });
-        const response = await this.requestManager.schedule(request, this.RETRY);
+        const response = await this.requestManager.schedule(request, 1);
         this.checkResponseError(response);
-        const $ = this.cheerio.load(response.data);
-        chapters.push(...this.parser.parseChapter($, mangaId, this));
-        let page = 2;
-        let page_data = [];
-        do {
-            const json = await this.helper.createChapterRequestObject($, page, this);
-            page_data = this.parser.parseChapter(this.cheerio.load(json.effects.html), mangaId, this);
-            chapters.push(...page_data);
-            page += 1;
-        } while (page_data.length > 0);
+        const json = JSON.parse(response.data ?? "[]");
+        const chapterList = json.data;
+        for (const item of chapterList) {
+            chapters.push(App.createChapter({
+                id: item.chapter_slug?.toString() ?? "",
+                name: item.chapter_name,
+                chapNum: Number(item.chapter_name?.replace("Chapter", "") ?? "-1"),
+                langCode: "en",
+                time: new Date(item.created_at ?? "0"),
+            }));
+        }
         return chapters;
     }
+    //LINK - C-Details
     async getChapterDetails(mangaId, chapterId) {
+        // https://api.reaperscans.com/chapter/hard-carry-support/chapter-71
         const request = App.createRequest({
-            url: `${this.baseUrl}/comics/${mangaId}/chapters/${chapterId}`,
-            method: 'GET',
+            url: `${this.apiUrl}/chapter/${mangaId.split(ID_SEP)[1]}/${chapterId}`,
+            method: "GET",
         });
-        const response = await this.requestManager.schedule(request, this.RETRY);
-        const $ = this.cheerio.load(response.data);
-        return this.parser.parseChapterDetails($, mangaId, chapterId);
+        const response = await this.requestManager.schedule(request, 1);
+        this.checkResponseError(response);
+        const json = JSON.parse(response.data ?? "[]");
+        const dataLatest = (json.chapter ?? []);
+        let pages = [];
+        for (const i of dataLatest.chapter_data?.images ?? []) {
+            if (i.startsWith(REAPERSCANS_CDN)) {
+                pages.push(i);
+            }
+            else {
+                pages.push(`${REAPERSCANS_CDN}/${i}`);
+            }
+        }
+        return App.createChapterDetails({
+            id: chapterId,
+            mangaId,
+            pages,
+        });
     }
+    //LINK - Search
     async getSearchResults(query, metadata) {
         const page = metadata?.page ?? 1;
         if (page == -1 || !query)
@@ -561,35 +600,82 @@ class ReaperScans {
                 results: [],
                 metadata: { page: -1 },
             });
+        const searchString = query.title
+            ?.trim()
+            .replace(/\s+/g, " ") // Replace multiple spaces with a single space
+            .replace(/ /g, "+");
+        const params = {
+            query_string: searchString,
+            perPage: 200,
+            page: 1,
+        };
+        const queryString = this.parser.joinParams(params);
+        const constructedURL = `${this.apiUrl}/query?adult=true${queryString}`;
         const request = App.createRequest({
-            url: `${this.baseUrl}`,
-            method: 'GET',
+            url: constructedURL,
+            method: "GET",
+            headers: {
+                "user-agent": await this.requestManager.getDefaultUserAgent(),
+                referer: `${this.baseUrl}/`,
+            },
         });
-        const response = await this.requestManager.schedule(request, this.RETRY);
+        const response = await this.requestManager.schedule(request, 1);
         this.checkResponseError(response);
-        const $ = this.cheerio.load(response.data);
-        const json = await this.helper.createSearchRequestObject($, query, this);
-        const result = this.parser.parseSearchResults(this.cheerio.load(json.effects.html));
+        const json = JSON.parse(response.data ?? "[]");
+        const searchResult = json.data;
+        const result = [];
+        for (const item of searchResult) {
+            const mangaId = item.id + ID_SEP + item.series_slug;
+            const latestChapter = item.free_chapters && item.free_chapters.length > 0
+                ? item.free_chapters[0]?.chapter_name
+                : "";
+            result.push(App.createPartialSourceManga({
+                mangaId,
+                image: `${REAPERSCANS_CDN}/${item.thumbnail}`,
+                title: item.title ?? "",
+                subtitle: latestChapter,
+            }));
+        }
         return App.createPagedResults({
             results: result,
             metadata: { page: -1 },
         });
     }
+    //LINK - ViewMore
     async getViewMoreItems(homepageSectionId, metadata) {
+        console.log(`HOMESECTION ID ${homepageSectionId}`);
+        if (homepageSectionId != "2") {
+            return App.createPagedResults({});
+        }
         let page = metadata?.page ?? 1;
         if (page == -1)
             return App.createPagedResults({
                 results: [],
                 metadata: { page: -1 },
             });
+        // Latest Titles
+        const params = {
+            series_type: "Comic",
+            perPage: 15,
+            order: "desc",
+            orderBy: "updated_at",
+            page: page,
+        };
+        const queryString = this.parser.joinParams(params);
+        const constructedURL = `${this.apiUrl}/query?adult=true${queryString}`;
         const request = App.createRequest({
-            url: `${this.baseUrl}/latest/comics?page=${page.toString()}`,
-            method: 'GET',
+            url: constructedURL,
+            method: "GET",
+            headers: {
+                "user-agent": await this.requestManager.getDefaultUserAgent(),
+                referer: `${this.baseUrl}/`,
+            },
         });
-        const response = await this.requestManager.schedule(request, this.RETRY);
+        const response = await this.requestManager.schedule(request, 1);
         this.checkResponseError(response);
-        const $ = this.cheerio.load(response.data);
-        const result = this.parser.parseViewMore($);
+        const json = JSON.parse(response.data ?? "[]");
+        const dataLatest = json.data;
+        const result = this.parser.parseViewMore(dataLatest);
         if (result.length < 1)
             page = -1;
         else
@@ -599,21 +685,41 @@ class ReaperScans {
             metadata: { page: page },
         });
     }
+    //LINK - HomePage
     async getHomePageSections(sectionCallback) {
+        const dataDaily = await this.parser
+            .getMangaItems(`${this.apiUrl}/trending?type=daily`, this)
+            .then((data) => {
+            return data.filter((item) => item.series_type == "Comic");
+        });
+        const dataWeekly = await this.parser
+            .getMangaItems(`${this.apiUrl}/trending?type=weekly`, this)
+            .then((data) => {
+            return data.filter((item) => item.series_type == "Comic");
+        });
+        // Latest Titles
+        const params = {
+            series_type: "Comic",
+            perPage: 15,
+            order: "desc",
+            orderBy: "updated_at",
+            page: 1,
+        };
+        const queryString = this.parser.joinParams(params);
+        const constructedURL = `${this.apiUrl}/query?adult=true${queryString}`;
         const request = App.createRequest({
-            url: this.baseUrl,
-            method: 'GET',
+            url: constructedURL,
+            method: "GET",
             headers: {
-                'user-agent': await this.requestManager.getDefaultUserAgent(),
+                "user-agent": await this.requestManager.getDefaultUserAgent(),
                 referer: `${this.baseUrl}/`,
             },
         });
-        console.log(`url is ${this.baseUrl}`);
-        const response = await this.requestManager.schedule(request, this.RETRY);
-        console.log(`response is ${response.status}`);
+        const response = await this.requestManager.schedule(request, 1);
         this.checkResponseError(response);
-        const $ = this.cheerio.load(response.data);
-        this.parser.parseHomeSections($, false, sectionCallback);
+        const json = JSON.parse(response.data ?? "[]");
+        const dataLatest = json.data;
+        this.parser.parseHomeSections(dataDaily, dataWeekly, dataLatest, sectionCallback);
     }
     /**
      * Parses a time string from a Madara source into a Date object.
@@ -623,31 +729,31 @@ class ReaperScans {
         date = date.toUpperCase();
         let time;
         const number = Number((/\d*/.exec(date) ?? [])[0]);
-        if (date.includes('LESS THAN AN HOUR') || date.includes('JUST NOW')) {
+        if (date.includes("LESS THAN AN HOUR") || date.includes("JUST NOW")) {
             time = new Date(Date.now());
         }
-        else if (date.includes('YEAR') || date.includes('YEARS')) {
+        else if (date.includes("YEAR") || date.includes("YEARS")) {
             time = new Date(Date.now() - number * 31556952000);
         }
-        else if (date.includes('MONTH') || date.includes('MONTHS')) {
+        else if (date.includes("MONTH") || date.includes("MONTHS")) {
             time = new Date(Date.now() - number * 2592000000);
         }
-        else if (date.includes('WEEK') || date.includes('WEEKS')) {
+        else if (date.includes("WEEK") || date.includes("WEEKS")) {
             time = new Date(Date.now() - number * 604800000);
         }
-        else if (date.includes('YESTERDAY')) {
+        else if (date.includes("YESTERDAY")) {
             time = new Date(Date.now() - 86400000);
         }
-        else if (date.includes('DAY') || date.includes('DAYS')) {
+        else if (date.includes("DAY") || date.includes("DAYS")) {
             time = new Date(Date.now() - number * 86400000);
         }
-        else if (date.includes('HOUR') || date.includes('HOURS')) {
+        else if (date.includes("HOUR") || date.includes("HOURS")) {
             time = new Date(Date.now() - number * 3600000);
         }
-        else if (date.includes('MINUTE') || date.includes('MINUTES')) {
+        else if (date.includes("MINUTE") || date.includes("MINUTES")) {
             time = new Date(Date.now() - number * 60000);
         }
-        else if (date.includes('SECOND') || date.includes('SECONDS')) {
+        else if (date.includes("SECOND") || date.includes("SECONDS")) {
             time = new Date(Date.now() - number * 1000);
         }
         else {
@@ -658,9 +764,9 @@ class ReaperScans {
     async getCloudflareBypassRequest() {
         return App.createRequest({
             url: this.baseUrl,
-            method: 'GET',
+            method: "GET",
             headers: {
-                'user-agent': await this.requestManager.getDefaultUserAgent(),
+                "user-agent": await this.requestManager.getDefaultUserAgent(),
                 referer: `${this.baseUrl}/`,
             },
         });
@@ -670,164 +776,84 @@ class ReaperScans {
         switch (status) {
             case 403:
             case 503:
-                throw new Error(this.createErrorString(`Status: ${response.status}`, 'Cloudflare Error: Click the CLOUD icon.', 'If the issue persists, use #support in netsky\'s server.'));
+                throw new Error(this.createErrorString(`Status: ${response.status}`, "Cloudflare Error: Click the CLOUD icon.", "If the issue persists, use #support in netsky's server."));
             case 404:
-                throw new Error(this.createErrorString(`Status: ${response.status}`, 'Webpage not found and the website likely changed domains.', 'Use #support in netsky\'s server.'));
+                throw new Error(this.createErrorString(`Status: ${response.status}`, "Webpage not found and the website likely changed domains.", "Use #support in netsky's server."));
         }
     }
     createErrorString(...errors) {
-        let ret = '\n<======>\n';
+        let ret = "\n<======>\n";
         for (const err of errors) {
             ret += `    • ${err}\n`;
         }
-        ret += '<======>\n';
+        ret += "<======>\n";
         return ret;
     }
 }
 exports.ReaperScans = ReaperScans;
 
-},{"./helper":63,"./parser":64,"@paperback/types":61}],63:[function(require,module,exports){
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.Helper = void 0;
-class Helper {
-    async createChapterRequestObject($, page, source) {
-        const csrf = $('meta[name=csrf-token]').attr('content');
-        const requestInfo = $('div.pb-4 div').attr('wire:initial-data');
-        if (requestInfo === undefined || csrf === undefined)
-            return {};
-        const jsonObj = JSON.parse(requestInfo);
-        const serverMemo = jsonObj.serverMemo ?? '';
-        const fingerprint = jsonObj.fingerprint ?? '';
-        const updates = JSON.parse(`[{"type":"callMethod","payload":{"id":"${(Math.random() + 1)
-            .toString(36)
-            .substring(8)}","method":"gotoPage","params":[${page.toString()},"page"]}}]`);
-        const body = {
-            fingerprint: fingerprint,
-            serverMemo: serverMemo,
-            updates: updates,
-        };
-        const request = App.createRequest({
-            url: `${source.baseUrl}/livewire/message/${fingerprint.name ?? 'fingerprint.was_none'}`,
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Livewire': 'true',
-                'X-CSRF-TOKEN': csrf,
-            },
-            data: JSON.stringify(body),
-        });
-        const response = await source.requestManager.schedule(request, source.RETRY);
-        source.checkResponseError(response);
-        const json = JSON.parse(response.data);
-        if (!json?.effects?.html) {
-            throw new Error('\n(ReaperScans) -> Chapter request returned no data. Contact support.\n');
-        }
-        return json;
-    }
-    async createSearchRequestObject($, query, source) {
-        const csrf = $('meta[name=csrf-token]').attr('content');
-        const requestInfo = $('[wire\\:initial-data]').attr('wire:initial-data');
-        if (requestInfo === undefined || csrf === undefined)
-            return;
-        const jsonObj = JSON.parse(requestInfo);
-        const serverMemo = jsonObj.serverMemo ?? '';
-        const fingerprint = jsonObj.fingerprint ?? '';
-        const updates = JSON.parse(`[{"type":"syncInput","payload":{"id":"${(Math.random() + 1)
-            .toString(36)
-            .substring(8)}","name":"query","value":"${query.title?.toLowerCase()}"}}]`);
-        const body = {
-            fingerprint: fingerprint,
-            serverMemo: serverMemo,
-            updates: updates,
-        };
-        const request = App.createRequest({
-            url: `${source.baseUrl}/livewire/message/${fingerprint.name ?? 'fingerprint.was_none'}`,
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Livewire': 'true',
-                'X-CSRF-TOKEN': csrf,
-            },
-            data: JSON.stringify(body),
-        });
-        const response = await source.requestManager.schedule(request, source.RETRY);
-        source.checkResponseError(response);
-        const json = JSON.parse(response.data);
-        if (!json?.effects?.html) {
-            throw new Error('\n(ReaperScans) -> Search request returned no data. Contact support.\n');
-        }
-        return json;
-    }
-}
-exports.Helper = Helper;
-
-},{}],64:[function(require,module,exports){
+},{"./parser":63,"@paperback/types":61}],63:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Parser = void 0;
 const types_1 = require("@paperback/types");
 class Parser {
-    parseMangaDetails($, mangaId) {
-        const title = $('.min-h-80 img').attr('alt') ?? '';
-        const image_str = $('.min-h-80 img').attr('data-cfsrc') ?? $('.min-h-80 img').attr('src');
-        const image = image_str.substring(image_str.indexOf('https:') ?? 0);
-        const desc = $('p.prose').text().trim() ?? '';
+    constructor() {
+        this.REAPERSCANS_DOMAIN = "https://reaperscans.com";
+        this.REAPERSCANS_DOMAIN_API = "https://api.reaperscans.com";
+        this.REAPERSCANS_CDN = "https://media.reaperscans.com/file/4SRBHm"; // https://domain.tld/file/<bucket>/<file>
+        this.ID_SEP = "|#|";
+    }
+    //LINK - MangaDetails
+    parseMangaDetails(manga, mangaId) {
+        const title = manga.title ?? "";
+        const image = `${this.REAPERSCANS_CDN}/${manga.thumbnail}`;
+        const desc = manga.description ?? "";
+        const tags = [
+            App.createTagSection({
+                id: "0",
+                label: "genres",
+                tags: (manga.tags ?? []).map((x) => App.createTag({
+                    id: x.id?.toString() ?? "",
+                    label: x.name ?? "",
+                })),
+            }),
+        ];
         return App.createSourceManga({
             id: mangaId,
             mangaInfo: App.createMangaInfo({
                 titles: [this.encodeText(title)],
                 image,
-                status: 'Ongoing',
-                tags: [],
+                status: manga.status ?? "Ongoing",
+                tags,
                 desc: this.encodeText(desc),
+                author: manga.author,
+                artist: manga.author,
             }),
         });
     }
-    parseChapter($, mangaId, source) {
-        const chapters = [];
-        const list = $('ul[role=list]').first();
-        for (const obj of $('li', list).toArray()) {
-            const id = $('a', obj).attr('href')?.split('/').pop() ?? '';
-            const name = $('.font-medium', obj).text().trim();
-            const date_str = $('div.mt-2 div p', obj).text().toLowerCase().replace('released', '').trim();
-            if (!id)
-                continue;
-            chapters.push(App.createChapter({
-                id,
-                name,
-                chapNum: Number(name.split(' ')[1] ?? '-1'),
-                langCode: 'en',
-                time: source.convertTime(date_str),
-            }));
-        }
-        return chapters;
-    }
-    parseChapterDetails($, mangaId, id) {
-        const pages = [];
-        for (const item of $('img.max-w-full').toArray()) {
-            const page_str = ($(item).attr('data-cfsrc') ?? $(item).attr('src') ?? '').replaceAll(' ', '%20');
-            const page = page_str.substring(page_str.indexOf('https:') ?? 0);
-            pages.push(page);
-        }
+    //LINK - C-Details
+    parseChapterDetails(chapter, mangaId, id) {
         return App.createChapterDetails({
             id,
             mangaId,
-            pages,
+            pages: chapter.chapter_data?.images ?? [],
         });
     }
     parseSearchResults($) {
         const results = [];
-        for (const item of $('ul li').toArray()) {
-            const id = $('a', item).attr('href')?.split('/').pop() ?? '';
-            if ($(item).text() == 'Novels')
+        for (const item of $("ul li").toArray()) {
+            const id = $("a", item).attr("href")?.split("/").pop() ?? "";
+            if ($(item).text() == "Novels")
                 break;
             if (!id)
                 continue;
-            const title = $('a img', item).attr('alt');
-            const subtitle = $('a p span:nth-child(3)', item).text().trim();
-            const image_str = $('a img', item).attr('data-cfsrc') ?? $('a img', item).attr('src') ?? '';
-            const image = image_str.substring(image_str.indexOf('https:') ?? 0);
+            const title = $("a img", item).attr("alt");
+            const subtitle = $("a p span:nth-child(3)", item).text().trim();
+            const image_str = $("a img", item).attr("data-cfsrc") ??
+                $("a img", item).attr("src") ??
+                "";
+            const image = image_str.substring(image_str.indexOf("https:") ?? 0);
             results.push(App.createPartialSourceManga({
                 image,
                 title: this.encodeText(title),
@@ -837,87 +863,109 @@ class Parser {
         }
         return results;
     }
-    parseViewMore($) {
+    //LINK - ViewMore
+    parseViewMore(data) {
         const more = [];
-        for (const obj of $('div.relative.space-x-2', $('.space-y-4 div')).toArray()) {
-            const id = $('div a', obj).attr('href')?.split('/').pop() ?? '';
-            const title = $('div a img', obj).attr('alt') ?? '';
-            const subtitle = $('a.text-center', obj).first().text().trim().split('\n')[0] ?? '';
-            const image_str = $('div a img', obj).attr('data-cfsrc') ?? $('div a img', obj).attr('src');
-            const image = image_str.substring(image_str.indexOf('https:') ?? 0);
-            if (!id)
-                continue;
-            if ($('div a', obj).attr('href').includes('novel'))
-                continue;
+        for (const item of data) {
+            const mangaId = item.id + this.ID_SEP + item.series_slug;
+            const latestChapter = item.free_chapters && item.free_chapters.length > 0
+                ? item.free_chapters[0]?.chapter_name
+                : "";
             more.push(App.createPartialSourceManga({
-                image,
-                title: this.encodeText(title),
-                mangaId: id,
-                subtitle: subtitle,
+                mangaId,
+                image: `${this.REAPERSCANS_CDN}/${item.thumbnail}`,
+                title: item.title ?? "",
+                subtitle: latestChapter,
             }));
         }
         return more;
     }
-    parseHomeSections($, _, sectionCallback) {
-        const type = types_1.HomeSectionType.singleRowNormal;
+    //LINK - HomePage
+    parseHomeSections(daily, weekly, latest, sectionCallback) {
         const section1 = App.createHomeSection({
-            id: '1',
-            title: 'Today\'s Picks',
+            id: "1",
+            title: "Trending",
             containsMoreItems: false,
             type: types_1.HomeSectionType.featured,
         });
         const section2 = App.createHomeSection({
-            id: '2',
-            title: 'Latest Comic',
+            id: "2",
+            title: "Latest",
             containsMoreItems: true,
-            type: type,
+            type: types_1.HomeSectionType.singleRowNormal,
         });
-        const featured = [];
-        const latest = [];
-        for (const obj of $('ul.grid-cols-2 li').toArray()) {
-            const id = $('div a', obj).attr('href')?.split('/').pop() ?? '';
-            const title = $('div a img', obj).attr('alt') ?? '';
-            const image_str = $('div a img', obj).attr('data-cfsrc') ?? $('div a img', obj).attr('src');
-            const image = image_str.substring(image_str.indexOf('https:') ?? 0);
-            const chnum = $('.flex.mt-4.space-x-2.mb-4 a').first().text().trim() ?? '';
-            const type = $('div a div.absolute span', obj).text().trim().toLowerCase() ?? '';
-            if (!id)
-                continue;
-            if (type == 'novel')
-                continue;
-            featured.push(App.createPartialSourceManga({
-                image,
-                title: this.encodeText(title),
-                mangaId: id,
-                subtitle: chnum,
+        const section3 = App.createHomeSection({
+            id: "3",
+            title: "Weekly Comics",
+            containsMoreItems: true,
+            type: types_1.HomeSectionType.singleRowLarge,
+        });
+        const mangaDaily = [];
+        const mangaWeekly = [];
+        const mangaLatest = [];
+        for (const item of daily) {
+            const mangaId = item.id + this.ID_SEP + item.series_slug;
+            mangaDaily.push(App.createPartialSourceManga({
+                mangaId,
+                image: `${this.REAPERSCANS_CDN}/${item.thumbnail}`,
+                title: item.title ?? "",
+                subtitle: item.author,
             }));
         }
-        section1.items = featured;
+        section1.items = mangaDaily;
         sectionCallback(section1);
-        for (const obj of $('div.relative.space-x-2', $('.space-y-4 div')).toArray()) {
-            const id = $('div a', obj).attr('href')?.split('/').pop() ?? '';
-            const title = $('div a img', obj).attr('alt') ?? '';
-            const subtitle = $('p', $('a.text-center', obj).first()).text().trim();
-            const image_str = $('div a img', obj).attr('data-cfsrc') ?? $('div a img', obj).attr('src');
-            const image = image_str.substring(image_str.indexOf('https:') ?? 0);
-            if (!id)
-                continue;
-            if ($('div a', obj).attr('href').includes('novel'))
-                continue;
-            latest.push(App.createPartialSourceManga({
-                image,
-                title: this.encodeText(title),
-                mangaId: id,
-                subtitle: subtitle,
+        for (const item of latest) {
+            const mangaId = item.id + this.ID_SEP + item.series_slug;
+            const latestChapter = item.free_chapters && item.free_chapters.length > 0
+                ? item.free_chapters[0]?.chapter_name
+                : "";
+            mangaLatest.push(App.createPartialSourceManga({
+                mangaId,
+                image: `${this.REAPERSCANS_CDN}/${item.thumbnail}`,
+                title: item.title ?? "",
+                subtitle: latestChapter,
             }));
         }
-        section2.items = latest;
+        section2.items = mangaLatest;
         sectionCallback(section2);
+        for (const item of weekly) {
+            const mangaId = item.id + this.ID_SEP + item.series_slug;
+            mangaWeekly.push(App.createPartialSourceManga({
+                mangaId,
+                image: `${this.REAPERSCANS_CDN}/${item.thumbnail}`,
+                title: item.title ?? "",
+                subtitle: item.author,
+            }));
+        }
+        section3.items = mangaWeekly;
+        sectionCallback(section3);
     }
     encodeText(str) {
         return str.replace(/&#([0-9]{1,4});/gi, (_, numStr) => {
             return String.fromCharCode(parseInt(numStr, 10));
         });
+    }
+    //LINK - MangaItmes Call
+    async getMangaItems(url, source) {
+        const request = App.createRequest({
+            url: url,
+            method: "GET",
+            headers: {
+                "user-agent": await source.requestManager.getDefaultUserAgent(),
+                referer: `${source.baseUrl}/`,
+            },
+        });
+        const response = await source.requestManager.schedule(request, source.RETRY);
+        source.checkResponseError(response);
+        const json = JSON.parse(response.data ?? "[]");
+        return json;
+    }
+    joinParams(params) {
+        let ret = "";
+        for (const key in params) {
+            ret += `&${key}=${params[key].toString()}`;
+        }
+        return ret;
     }
 }
 exports.Parser = Parser;
