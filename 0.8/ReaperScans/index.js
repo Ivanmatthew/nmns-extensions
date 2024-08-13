@@ -470,7 +470,7 @@ const ID_SEP = "|#|";
 // https://media.reaperscans.com/file/4SRBHm//comics/c22c1254-ce3c-4628-b3ad-34df82e40cd8/tdDPcgIEfalT3qvWpQQgVZECpadGpI9azYAxFcOo.jpg
 //SECTION - SourceInfo
 exports.ReaperScansInfo = {
-    version: "5.0",
+    version: "5.1",
     name: "ReaperScans",
     description: "Reaperscans source for 0.8",
     author: "NmN",
@@ -520,7 +520,7 @@ class ReaperScans {
     }
     //LINK - URL
     getMangaShareUrl(mangaId) {
-        return `${this.baseUrl}/comics/${mangaId}`;
+        return `${this.baseUrl}/series/${mangaId.split("|#|")[1]}`;
     }
     //LINK - M-Details
     async getMangaDetails(mangaId) {
