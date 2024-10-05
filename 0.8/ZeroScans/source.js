@@ -699,23 +699,29 @@ exports.Parser = void 0;
 const types_1 = require("@paperback/types");
 class Parser {
     parseMangaDetails($, mangaId) {
-        const title = $('.v-card__title').text().trim() ?? '';
-        const meta_html = $('head > meta').parent().html()?.toString() ?? '';
+        const title = $(".v-card__title").text().trim() ?? "";
+        const meta_html = $("head > meta").parent().html()?.toString() ?? "";
         let meta_tag = meta_html.substring(meta_html.indexOf('<meta data-n-head="ssr" data-hid="og:image" key="og:image" property="og:image" name="og:image" content="') + 104);
-        meta_tag = meta_tag.substring(0, meta_tag.indexOf('"><')).trim() ?? '';
+        meta_tag = meta_tag.substring(0, meta_tag.indexOf('"><')).trim() ?? "";
         const image = meta_tag;
-        const desc = $('.v-card__text').text().trim() ?? '';
-        let status = 'Unknown';
-        status = this.mangaStatus($('.v-chip__content').text().trim().toLowerCase());
+        const desc = $(".v-card__text").text().trim() ?? "";
+        let status = "Unknown";
+        status = this.mangaStatus($(".v-chip__content").text().trim().toLowerCase());
         const arrayTags = [];
-        for (const obj of $('.v-slide-group__content a').toArray()) {
-            const id = $(obj).attr('href').replace('/comics?genres=', '') ?? '';
+        for (const obj of $(".v-slide-group__content a").toArray()) {
+            const id = $(obj).attr("href").replace("/comics?genres=", "") ?? "";
             const label = $(obj).text().trim();
             if (!id || !label)
                 continue;
             arrayTags.push({ id: id, label: label });
         }
-        const tagSections = [App.createTagSection({ id: '0', label: 'genres', tags: arrayTags.map((x) => App.createTag(x)) })];
+        const tagSections = [
+            App.createTagSection({
+                id: "0",
+                label: "genres",
+                tags: arrayTags.map((x) => App.createTag(x)),
+            }),
+        ];
         return App.createSourceManga({
             id: mangaId,
             mangaInfo: App.createMangaInfo({
@@ -728,27 +734,27 @@ class Parser {
         });
     }
     mangaStatus(str) {
-        if (str.includes('ongoing'))
-            return 'Ongoing';
-        if (str.includes('complete'))
-            return 'Completed';
-        if (str.includes('hiatus'))
-            return 'Hiatus';
-        if (str.includes('dropped'))
-            return 'Abandoned';
-        if (str.includes('new'))
-            return 'Ongoing';
-        return 'Ongoing';
+        if (str.includes("ongoing"))
+            return "Ongoing";
+        if (str.includes("complete"))
+            return "Completed";
+        if (str.includes("hiatus"))
+            return "Hiatus";
+        if (str.includes("dropped"))
+            return "Abandoned";
+        if (str.includes("new"))
+            return "Ongoing";
+        return "Ongoing";
     }
-    parseChapter(json, mangaId, source) {
+    parseChapter(json, _, source) {
         const chapters = [];
         for (const item of json.data.data) {
             chapters.push(App.createChapter({
                 id: item.id.toString(),
                 name: `Chapter ${item.name.toString()}`,
-                chapNum: Number(item.name.toString() ?? '-1'),
+                chapNum: Number(item.name.toString() ?? "-1"),
                 time: source.convertTime(item.created_at),
-                langCode: 'en',
+                langCode: "en",
             }));
         }
         return chapters;
@@ -766,7 +772,7 @@ class Parser {
     }
     parseSearchResults(json, query) {
         const results = [];
-        const title = (query.title ?? '').toLowerCase();
+        const title = (query.title ?? "").toLowerCase();
         const arrayTags = new Set();
         for (const item of query.includedTags ?? []) {
             arrayTags.add(item.id);
@@ -795,7 +801,7 @@ class Parser {
         const more = [];
         for (const item of json.data.comics) {
             more.push(App.createPartialSourceManga({
-                image: item.cover.horizontal.replace('horizontal', 'vertical'),
+                image: item.cover.horizontal.replace("horizontal", "vertical"),
                 title: this.encodeText(item.name),
                 mangaId: item.slug,
                 subtitle: this.encodeText(`Chapter ${item.chapter_count}`),
@@ -805,20 +811,20 @@ class Parser {
     }
     parseHomeSections(json, releases, sectionCallback) {
         const section1 = App.createHomeSection({
-            id: '1',
-            title: 'Featured',
+            id: "1",
+            title: "Featured",
             containsMoreItems: false,
             type: types_1.HomeSectionType.featured,
         });
         const section2 = App.createHomeSection({
-            id: '2',
-            title: 'Latest',
+            id: "2",
+            title: "Latest",
             containsMoreItems: false,
             type: types_1.HomeSectionType.singleRowNormal,
         });
         const section3 = App.createHomeSection({
-            id: '3',
-            title: 'Popular',
+            id: "3",
+            title: "Popular",
             containsMoreItems: true,
             type: types_1.HomeSectionType.singleRowNormal,
         });
@@ -836,7 +842,9 @@ class Parser {
         sectionCallback(section1);
         for (const item of releases.all) {
             latest.push(App.createPartialSourceManga({
-                image: !item.cover.vertical ? item.cover.horizontal : item.cover.vertical ?? '',
+                image: !item.cover.vertical
+                    ? item.cover.horizontal
+                    : item.cover.vertical ?? "",
                 title: this.encodeText(item.name),
                 mangaId: item.slug,
             }));
@@ -845,7 +853,9 @@ class Parser {
         sectionCallback(section2);
         for (const item of json.data.popular_comics) {
             popular.push(App.createPartialSourceManga({
-                image: !item.cover.full ? item.cover.icon : item.cover.full ?? '',
+                image: !item.cover.full
+                    ? item.cover.icon
+                    : item.cover.full ?? "",
                 title: this.encodeText(item.name),
                 mangaId: item.slug,
             }));
