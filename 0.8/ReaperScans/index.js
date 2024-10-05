@@ -470,7 +470,7 @@ const ID_SEP = "|#|";
 // https://media.reaperscans.com/file/4SRBHm//comics/c22c1254-ce3c-4628-b3ad-34df82e40cd8/tdDPcgIEfalT3qvWpQQgVZECpadGpI9azYAxFcOo.jpg
 //SECTION - SourceInfo
 exports.ReaperScansInfo = {
-    version: "5.1",
+    version: "5.2",
     name: "ReaperScans",
     description: "Reaperscans source for 0.8",
     author: "NmN",
@@ -578,12 +578,14 @@ class ReaperScans {
         const json = JSON.parse(response.data ?? "[]");
         const dataLatest = (json.chapter ?? []);
         let pages = [];
-        for (const i of dataLatest.chapter_data?.images ?? []) {
-            if (i.startsWith(REAPERSCANS_CDN)) {
-                pages.push(i);
+        console.log("DEBUGGER");
+        for (const i of dataLatest.chapter_data.files ?? []) {
+            const image = i.url;
+            if (image.startsWith(REAPERSCANS_CDN)) {
+                pages.push(image);
             }
             else {
-                pages.push(`${REAPERSCANS_CDN}/${i}`);
+                pages.push(`${REAPERSCANS_CDN}/${image}`);
             }
         }
         return App.createChapterDetails({
@@ -631,7 +633,7 @@ class ReaperScans {
                 : "";
             result.push(App.createPartialSourceManga({
                 mangaId,
-                image: `${REAPERSCANS_CDN}/${item.thumbnail}`,
+                image: this.parser.checkimage(item.thumbnail ?? ""),
                 title: item.title ?? "",
                 subtitle: latestChapter,
             }));
@@ -687,16 +689,14 @@ class ReaperScans {
     }
     //LINK - HomePage
     async getHomePageSections(sectionCallback) {
-        const dataDaily = await this.parser
-            .getMangaItems(`${this.apiUrl}/trending?type=daily`, this)
-            .then((data) => {
-            return data.filter((item) => item.series_type == "Comic");
-        });
-        const dataWeekly = await this.parser
-            .getMangaItems(`${this.apiUrl}/trending?type=weekly`, this)
-            .then((data) => {
-            return data.filter((item) => item.series_type == "Comic");
-        });
+        const dataDaily = await this.parser.getMangaItems(`${this.apiUrl}/trending?type=daily`, this);
+        // .then((data) => {
+        //     return data.filter((item) => item.series_type == "Comic")
+        // })
+        const dataWeekly = await this.parser.getMangaItems(`${this.apiUrl}/trending?type=weekly`, this);
+        // .then((data) => {
+        //     return data.filter((item) => item.series_type == "Comic")
+        // })
         // Latest Titles
         const params = {
             series_type: "Comic",
@@ -873,7 +873,7 @@ class Parser {
                 : "";
             more.push(App.createPartialSourceManga({
                 mangaId,
-                image: `${this.REAPERSCANS_CDN}/${item.thumbnail}`,
+                image: this.checkimage(item.thumbnail ?? ""),
                 title: item.title ?? "",
                 subtitle: latestChapter,
             }));
@@ -907,9 +907,8 @@ class Parser {
             const mangaId = item.id + this.ID_SEP + item.series_slug;
             mangaDaily.push(App.createPartialSourceManga({
                 mangaId,
-                image: `${this.REAPERSCANS_CDN}/${item.thumbnail}`,
+                image: this.checkimage(item.thumbnail ?? ""),
                 title: item.title ?? "",
-                subtitle: item.author,
             }));
         }
         section1.items = mangaDaily;
@@ -921,7 +920,7 @@ class Parser {
                 : "";
             mangaLatest.push(App.createPartialSourceManga({
                 mangaId,
-                image: `${this.REAPERSCANS_CDN}/${item.thumbnail}`,
+                image: this.checkimage(item.thumbnail ?? ""),
                 title: item.title ?? "",
                 subtitle: latestChapter,
             }));
@@ -932,13 +931,21 @@ class Parser {
             const mangaId = item.id + this.ID_SEP + item.series_slug;
             mangaWeekly.push(App.createPartialSourceManga({
                 mangaId,
-                image: `${this.REAPERSCANS_CDN}/${item.thumbnail}`,
+                image: this.checkimage(item.thumbnail ?? ""),
                 title: item.title ?? "",
-                subtitle: item.author,
             }));
         }
         section3.items = mangaWeekly;
         sectionCallback(section3);
+    }
+    checkimage(img) {
+        if (img == "") {
+            return "";
+        }
+        if (img.startsWith("https")) {
+            return img;
+        }
+        return `${this.REAPERSCANS_CDN}/${img}`;
     }
     encodeText(str) {
         return str.replace(/&#([0-9]{1,4});/gi, (_, numStr) => {
