@@ -1445,7 +1445,7 @@ const ID_SEP = "|#|";
 // https://media.reaperscans.com/file/4SRBHm//comics/c22c1254-ce3c-4628-b3ad-34df82e40cd8/tdDPcgIEfalT3qvWpQQgVZECpadGpI9azYAxFcOo.jpg
 //SECTION - SourceInfo
 exports.ReaperScansInfo = {
-    version: "5.3",
+    version: "5.4",
     name: "ReaperScans",
     description: "Reaperscans source for 0.8",
     author: "NmN",
@@ -1553,7 +1553,6 @@ class ReaperScans {
         const json = JSON.parse(response.data ?? "[]");
         const dataLatest = (json.chapter ?? []);
         const pages = [];
-        console.log("DEBUGGER");
         for (const i of dataLatest.chapter_data?.files ?? []) {
             const image = i.url ?? "";
             if (image.startsWith(REAPERSCANS_CDN)) {
@@ -1620,7 +1619,6 @@ class ReaperScans {
     }
     //LINK - ViewMore
     async getViewMoreItems(homepageSectionId, metadata) {
-        console.log(`HOMESECTION ID ${homepageSectionId}`);
         if (homepageSectionId != "2") {
             return App.createPagedResults({});
         }
@@ -1785,7 +1783,6 @@ class Parser {
     //LINK - MangaDetails
     parseMangaDetails(manga, mangaId) {
         const title = manga.title ?? "";
-        const image = `${this.REAPERSCANS_CDN}/${manga.thumbnail}`;
         const desc = manga.description ?? "";
         const tags = [
             App.createTagSection({
@@ -1797,13 +1794,11 @@ class Parser {
                 })),
             }),
         ];
-        console.log("DEBUGGER");
-        console.log(entities.decodeHTML(desc));
         return App.createSourceManga({
             id: mangaId,
             mangaInfo: App.createMangaInfo({
                 titles: [this.encodeText(title)],
-                image,
+                image: this.checkimage(manga.thumbnail ?? ""),
                 status: manga.status ?? "Ongoing",
                 tags,
                 desc: entities.decodeHTML(desc),
@@ -1811,42 +1806,6 @@ class Parser {
                 artist: manga.author,
             }),
         });
-    }
-    //LINK - C-Details
-    // UNUSED
-    // parseChapterDetails(
-    //     chapter: RSChapterDetailsData,
-    //     mangaId: string,
-    //     id: string,
-    // ): ChapterDetails {
-    //     return App.createChapterDetails({
-    //         id,
-    //         mangaId,
-    //         pages: chapter.chapter_data?.images ?? [],
-    //     })
-    // }
-    parseSearchResults($) {
-        const results = [];
-        for (const item of $("ul li").toArray()) {
-            const id = $("a", item).attr("href")?.split("/").pop() ?? "";
-            if ($(item).text() == "Novels")
-                break;
-            if (!id)
-                continue;
-            const title = $("a img", item).attr("alt");
-            const subtitle = $("a p span:nth-child(3)", item).text().trim();
-            const image_str = $("a img", item).attr("data-cfsrc") ??
-                $("a img", item).attr("src") ??
-                "";
-            const image = image_str.substring(image_str.indexOf("https:") ?? 0);
-            results.push(App.createPartialSourceManga({
-                image,
-                title: this.encodeText(title),
-                mangaId: id,
-                subtitle: this.encodeText(subtitle),
-            }));
-        }
-        return results;
     }
     //LINK - ViewMore
     parseViewMore(data) {
